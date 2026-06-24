@@ -489,21 +489,52 @@ function ownerText(){
 /* ---- 水電盈虧 ---- */
 function viewUtil(){
   const mo=getMonth(Y,M);
-  // 雙月對帳：抓本月＋上一個月的收費
+  // 預設帶兩張台電帳單(2樓、3樓);水費單含金額+度數
+  if(!mo.elecBills) mo.elecBills=[{label:'2樓',amount:'',degrees:''},{label:'3樓',amount:'',degrees:''}];
+  if(!mo.waterBill) mo.waterBill={amount:(mo.bill?.water??''),degrees:''};
+
+  // 系統算:跟租客收到的電費 / 度數 / 水費
   const elecGot=activeRooms().reduce((a,r)=>{const e=elecOf(r,Y,M);return a+(e?e.amount:0);},0);
-  const waterGot=activeRooms().reduce((a,r)=>a+r.water,0)*2; // 兩個月份水費
-  const bill=mo.bill||{};
-  const billElec=+bill.elec||0, billWater=+bill.water||0;
-  const net=(elecGot+waterGot)-(billElec+billWater);
+  const useGot =activeRooms().reduce((a,r)=>{const e=elecOf(r,Y,M);return a+(e?e.use:0);},0);
+  const waterGot=activeRooms().reduce((a,r)=>a+r.water,0)*2; // 每月固定×2 個月
+
+  // 台電帳單合計(多張)
+  const billElec=mo.elecBills.reduce((a,b)=>a+(+b.amount||0),0);
+  const billUse =mo.elecBills.reduce((a,b)=>a+(+b.degrees||0),0);
+  const elecNet=elecGot-billElec, useDiff=useGot-billUse;
+  // 台水
+  const billWater=+mo.waterBill.amount||0, waterNet=waterGot-billWater;
+
+  const billRows=mo.elecBills.map((b,i)=>`<tr>
+    <td><input data-eb="${i}" data-f="label" value="${b.label||''}" style="width:64px"></td>
+    <td><input type="number" data-eb="${i}" data-f="amount" value="${b.amount??''}" placeholder="金額"></td>
+    <td><input type="number" data-eb="${i}" data-f="degrees" value="${b.degrees??''}" placeholder="度數"></td>
+    <td><button class="btn ghost sm" data-eb-del="${i}" style="color:var(--red)">刪</button></td>
+  </tr>`).join('');
+
   return `<div class="panel"><h2><span class="bar"></span>水電盈虧（內部）· ${Y}年${M}月</h2>
-    <div class="sub">我向租客收到的電費＋水費，對比台電／台水實付帳單，看有沒有剩。（水費以每月固定×2 個月估算）</div>
+    <div class="sub">向租客收的電費／水費,對比台電／台水實付帳單看盈虧;並比對「收到度數」與「帳單度數」的差異(公電、誤差會差一點點,正常)。</div>
+
+    <h2 style="font-size:15px;margin-top:4px"><span class="bar"></span>電費</h2>
+    <table><thead><tr><th>電費單</th><th>實付金額</th><th>帳單度數</th><th></th></tr></thead>
+      <tbody>${billRows}</tbody></table>
+    <div style="margin:8px 0"><button class="btn ghost sm" id="ebAdd">＋ 新增電費單</button></div>
     <div class="statement">
-      <div class="row"><span>收到電費（本期）</span><span class="num pos">+ ${fmt(elecGot)}</span></div>
-      <div class="row"><span>收到水費（2 個月）</span><span class="num pos">+ ${fmt(waterGot)}</span></div>
+      <div class="row"><span>收到電費(租客)</span><span class="num pos">+ ${fmt(elecGot)}</span></div>
+      <div class="row"><span>台電實付合計</span><span class="num neg">− ${fmt(billElec)}</span></div>
+      <div class="row big"><span>電費盈餘／不足</span><span class="num ${elecNet>=0?'pos':'neg'}">${elecNet>=0?'+ ':'− '}${fmt(Math.abs(elecNet))}</span></div>
       <div class="rule"></div>
-      <div class="row"><span>台電帳單實付</span><span class="num"><input type="number" data-bill="elec" value="${bill.elec??''}" placeholder="0" style="width:110px"></span></div>
-      <div class="row"><span>台水帳單實付</span><span class="num"><input type="number" data-bill="water" value="${bill.water??''}" placeholder="0" style="width:110px"></span></div>
-      <div class="row big"><span>本期盈餘／不足</span><span class="num ${net>=0?'pos':'neg'}">${net>=0?'+ ':'− '}${fmt(Math.abs(net))}</span></div>
+      <div class="row"><span>收到度數合計(各房用量)</span><span class="num">${useGot} 度</span></div>
+      <div class="row"><span>台電帳單度數合計</span><span class="num">${billUse} 度</span></div>
+      <div class="row"><span>度數差異</span><span class="num ${useDiff>=0?'pos':'neg'}">${useDiff>=0?'+':'−'}${Math.abs(useDiff)} 度</span></div>
+    </div>
+
+    <h2 style="font-size:15px;margin-top:18px"><span class="bar"></span>水費</h2>
+    <div class="statement">
+      <div class="row"><span>收到水費(2 個月)</span><span class="num pos">+ ${fmt(waterGot)}</span></div>
+      <div class="row"><span>台水實付金額</span><span class="num"><input type="number" data-wb="amount" value="${mo.waterBill.amount??''}" placeholder="0" style="width:110px"></span></div>
+      <div class="row"><span>台水帳單度數</span><span class="num"><input type="number" data-wb="degrees" value="${mo.waterBill.degrees??''}" placeholder="度數" style="width:110px"></span></div>
+      <div class="row big"><span>水費盈餘／不足</span><span class="num ${waterNet>=0?'pos':'neg'}">${waterNet>=0?'+ ':'− '}${fmt(Math.abs(waterNet))}</span></div>
     </div></div>`;
 }
 
@@ -638,8 +669,18 @@ function bind(){
   document.querySelectorAll('[data-reading]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).readings[inp.dataset.reading]=inp.value;save();render();});
   // 退押金
   document.querySelectorAll('[data-dep]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).deposits[inp.dataset.dep]=inp.value;save();render();});
-  // 台電台水帳單
-  document.querySelectorAll('[data-bill]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).bill[inp.dataset.bill]=inp.value;save();render();});
+  // 台電帳單(多張):金額/度數/名稱
+  document.querySelectorAll('[data-eb]').forEach(inp=>inp.onchange=()=>{
+    const mo=getMonth(Y,M); mo.elecBills[+inp.dataset.eb][inp.dataset.f]=inp.value; save(); render();
+  });
+  document.querySelectorAll('[data-eb-del]').forEach(b=>b.onclick=()=>{
+    const mo=getMonth(Y,M); mo.elecBills.splice(+b.dataset.ebDel,1); save(); render();
+  });
+  const ea=$('#ebAdd'); if(ea) ea.onclick=()=>{ const mo=getMonth(Y,M); (mo.elecBills=mo.elecBills||[]).push({label:'',amount:'',degrees:''}); save(); render(); };
+  // 台水帳單:金額/度數
+  document.querySelectorAll('[data-wb]').forEach(inp=>inp.onchange=()=>{
+    const mo=getMonth(Y,M); (mo.waterBill=mo.waterBill||{})[inp.dataset.wb]=inp.value; save(); render();
+  });
   // 歷史帳本：跳到該月（切到屋主對帳）
   document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{
     const[y,m]=b.dataset.jump.split('-').map(Number); Y=y; M=m;
