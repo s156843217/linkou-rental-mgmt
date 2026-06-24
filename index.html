@@ -122,7 +122,7 @@ td input:focus{outline:none;border-color:var(--clay)}
    所有金流計算寫成純函式，方便日後搬到後端 / LINE 重用。
    ========================================================================= */
 const $ = s => document.querySelector(s);
-const LS_KEY = 'rentmgmt_proto_v2';
+const LS_KEY = 'rentmgmt_proto_v3';
 
 /* ---- 預設資料（房間、常數，依使用者提供）---- */
 const DEFAULT = {
@@ -135,21 +135,22 @@ const DEFAULT = {
     elecRate:5,           // 每度電價
     startRoc:115, startMonth:1, // 起算月份（民國）
     seedRemit:78000,      // 起算月「上月實際匯給屋主金額」起始值（請改成真實值）
-    adjustToOwner:true,   // 固定調整（梯間補助/減免）是否由屋主吸收（true=屋主帳也扣，待確認）
+    adjustToOwner:true,   // 固定調整（梯間補助/減免/補貼）是否由屋主吸收（true=屋主帳也扣，待確認）
     bank:{name:'中國信託 江翠分行', code:'8220576', acct:'576540669668'} // 屋主匯款帳戶
   },
-  // group：同一租客的多間房（同一群組會合併成一封訊息）；adjust：固定調整（負值=折扣）
+  // group：同一租客的多間房（同群組合併成一封訊息）
+  // adjusts：每房可有多筆調整（負值=折扣），when=every每月／even雙月(收電費月)／odd單月
   // seedReading = 目前電表最新讀數（由電表照片 OCR 得來，當作下一期的「上期」）
   rooms:[
-    {no:'101',rent:23000,parking:0,water:0,  deposit:0,seedReading:0,    group:'A',adjust:-500,adjustLabel:'梯間補助',name:'',contact:'',start:'',end:'',active:true},
-    {no:'201',rent:9500, parking:0,water:0,  deposit:0,seedReading:17208,group:'A',adjust:-100,adjustLabel:'梯間減免',name:'',contact:'',start:'',end:'',active:true},
-    {no:'202',rent:8000, parking:1,water:0,  deposit:0,seedReading:20874,group:'', adjust:0,   adjustLabel:'',    name:'',contact:'',start:'',end:'',active:true},
-    {no:'203',rent:10500,parking:0,water:0,  deposit:0,seedReading:21680,group:'A',adjust:0,   adjustLabel:'',    name:'',contact:'',start:'',end:'',active:true},
-    {no:'301',rent:9000, parking:2,water:0,  deposit:0,seedReading:31941,group:'', adjust:0,   adjustLabel:'',    name:'',contact:'',start:'',end:'',active:true},
-    {no:'302',rent:9500, parking:0,water:0,  deposit:0,seedReading:17851,group:'', adjust:0,   adjustLabel:'',    name:'',contact:'',start:'',end:'',active:true},
-    {no:'303',rent:10000,parking:1,water:100,deposit:0,seedReading:21151,group:'', adjust:0,   adjustLabel:'',    name:'',contact:'',start:'',end:'',active:true},
-    {no:'401',rent:8500, parking:2,water:100,deposit:0,seedReading:18075,group:'', adjust:0,   adjustLabel:'',    name:'',contact:'',start:'',end:'',active:true},
-    {no:'402',rent:8500, parking:0,water:100,deposit:0,seedReading:17147,group:'', adjust:0,   adjustLabel:'',    name:'',contact:'',start:'',end:'',active:true},
+    {no:'101',rent:23000,parking:0,water:0,  deposit:0,seedReading:0,    group:'A',adjusts:[{label:'梯間補助',amount:-500,when:'every'}],name:'',contact:'',start:'',end:'',active:true},
+    {no:'201',rent:9500, parking:0,water:0,  deposit:0,seedReading:17208,group:'A',adjusts:[{label:'梯間減免',amount:-100,when:'every'},{label:'梯間補貼',amount:-100,when:'even'}],name:'',contact:'',start:'',end:'',active:true},
+    {no:'202',rent:8000, parking:1,water:0,  deposit:0,seedReading:20874,group:'', adjusts:[],name:'',contact:'',start:'',end:'',active:true},
+    {no:'203',rent:10500,parking:0,water:0,  deposit:0,seedReading:21680,group:'A',adjusts:[],name:'',contact:'',start:'',end:'',active:true},
+    {no:'301',rent:9000, parking:2,water:0,  deposit:0,seedReading:31941,group:'', adjusts:[{label:'梯間補貼',amount:-200,when:'even'}],name:'',contact:'',start:'',end:'',active:true},
+    {no:'302',rent:9500, parking:0,water:0,  deposit:0,seedReading:17851,group:'', adjusts:[],name:'',contact:'',start:'',end:'',active:true},
+    {no:'303',rent:10000,parking:1,water:100,deposit:0,seedReading:21151,group:'', adjusts:[],name:'',contact:'',start:'',end:'',active:true},
+    {no:'401',rent:8500, parking:2,water:100,deposit:0,seedReading:18075,group:'', adjusts:[],name:'',contact:'',start:'',end:'',active:true},
+    {no:'402',rent:8500, parking:0,water:100,deposit:0,seedReading:17147,group:'', adjusts:[],name:'',contact:'',start:'',end:'',active:true},
   ],
   months:{} // key "YYYY-M" -> {readings:{no:本期度數}, deposits:{no:退押金}, rentOverride:{no:當月房租}, bill:{elec,water}, note}
 };
@@ -191,8 +192,8 @@ function elecOf(r,y,m){
 /* ---- 服務費鏈：服務費(本月)=(上月實際匯款−扣除額)×比例 ---- */
 function isCable(m){ return DB.settings.cableMonths.includes(+m); }
 function depositSum(y,m){ const d=DB.months[mkey(y,m)]?.deposits||{}; return Object.values(d).reduce((a,b)=>a+(+b||0),0); }
-function adjOwner(r){ return DB.settings.adjustToOwner?(+r.adjust||0):0; } // 固定調整是否計入屋主帳
-function ownerIncome(y,m){ return activeRooms().reduce((a,r)=>a+rentOf(r,y,m)+r.parking*DB.settings.parkingFee+adjOwner(r),0); }
+function adjOwner(r,m){ return DB.settings.adjustToOwner?adjSum(r,m):0; } // 本月適用調整是否計入屋主帳
+function ownerIncome(y,m){ return activeRooms().reduce((a,r)=>a+rentOf(r,y,m)+r.parking*DB.settings.parkingFee+adjOwner(r,m),0); }
 function prevRemit(y,m){
   // 上一個月
   let pm=m-1, py=y; if(pm<=0){pm=12;py--;}
@@ -213,21 +214,26 @@ function clearMemo(){ for(const k in _memo) delete _memo[k]; }
 /* =========================================================================
    租客 LINE 文字（民國年，照使用者格式）
    ========================================================================= */
-// 單一房間「本月應收總額」（含房租＋車位＋水費＋固定調整＋電費）
+// 調整：依時機(每月/雙月/單月)篩出本月適用的調整
+function adjApplies(a,m){ return a.when==='every'||(a.when==='even'&&m%2===0)||(a.when==='odd'&&m%2===1); }
+function roomAdjusts(r,m){ return (r.adjusts||[]).filter(a=>adjApplies(a,m)); }
+function adjSum(r,m){ return roomAdjusts(r,m).reduce((s,a)=>s+(+a.amount||0),0); }
+
+// 單一房間「本月應收總額」（含房租＋車位＋水費＋本月適用調整＋電費）
 function roomTotal(r,y,m){
   const e=elecOf(r,y,m);
-  return rentOf(r,y,m)+r.parking*DB.settings.parkingFee+r.water+(+r.adjust||0)+(e?e.amount:0);
+  return rentOf(r,y,m)+r.parking*DB.settings.parkingFee+r.water+adjSum(r,m)+(e?e.amount:0);
 }
 
 // 單一租客（一間房）訊息
 function tenantBill(r,y,m){
-  const rent=rentOf(r,y,m), park=r.parking*DB.settings.parkingFee, water=r.water, adj=+r.adjust||0;
+  const rent=rentOf(r,y,m), park=r.parking*DB.settings.parkingFee, water=r.water;
   const e=elecOf(r,y,m), elec=e?e.amount:0;
   let t=`${y}年${m}月份租金共計${fmt(roomTotal(r,y,m))}元\n`;
   t+=`租金${fmt(rent)}元\n`;
   if(park>0) t+=`車位${fmt(park)}元\n`;
   if(water>0) t+=`水費${fmt(water)}元\n`;
-  if(adj)     t+=`${r.adjustLabel||'調整'}：${fmt(adj)}元\n`;
+  roomAdjusts(r,m).forEach(a=>{ t+=`${a.label||'調整'}：${fmt(a.amount)}元\n`; });
   if(e){
     t+=`電費${fmt(elec)}元\n\n電費\n`;
     t+=`${e.cur}-${e.prev}=${e.use}度\n`;
@@ -243,8 +249,8 @@ function groupBill(rooms,y,m){
   // 摘要列：房號：金額（無明細的房，把調整標在這）
   rooms.forEach(r=>{
     const hasDetail=!!elecOf(r,y,m);
-    const adj=+r.adjust||0;
-    const note=(adj&&!hasDetail)?`（${r.adjustLabel||'調整'} ${fmt(adj)}元）`:'';
+    const adjs=roomAdjusts(r,m);
+    const note=(adjs.length&&!hasDetail)?`（${adjs.map(a=>`${a.label||'調整'}${fmt(a.amount)}元`).join('、')}）`:'';
     t+=`${r.no}：${fmt(roomTotal(r,y,m))}元${note}\n`;
   });
   // 明細區：有電費的房（列出房租／調整／電費算式）
@@ -252,12 +258,12 @@ function groupBill(rooms,y,m){
   if(det.length){
     t+=`----------------------------------------\n`;
     det.forEach((r,i)=>{
-      const e=elecOf(r,y,m), park=r.parking*DB.settings.parkingFee, adj=+r.adjust||0;
+      const e=elecOf(r,y,m), park=r.parking*DB.settings.parkingFee;
       t+=`${r.no} 總計${fmt(roomTotal(r,y,m))}元\n`;
       t+=`房租${fmt(rentOf(r,y,m))}元\n`;
       if(park>0) t+=`車位${fmt(park)}元\n`;
       if(r.water>0) t+=`水費${fmt(r.water)}元\n`;
-      if(adj) t+=`${r.adjustLabel||'調整'}：${fmt(adj)}元\n`;
+      roomAdjusts(r,m).forEach(a=>{ t+=`${a.label||'調整'}：${fmt(a.amount)}元\n`; });
       t+=`電費：${fmt(e.amount)}元\n`;
       t+=`${e.cur}-${e.prev}=${e.use}度\n`;
       t+=`${e.use}*${DB.settings.elecRate}=${fmt(e.amount)}元`;
@@ -350,11 +356,12 @@ function viewElec(){
 /* ---- 屋主對帳 ---- */
 function viewOwner(){
   const mo=getMonth(Y,M);
-  const anyAdj=activeRooms().some(r=>adjOwner(r));
+  const anyAdj=activeRooms().some(r=>adjOwner(r,M));
   const rows=activeRooms().map(r=>{
-    const rent=rentOf(r,Y,M), park=r.parking*DB.settings.parkingFee, adj=adjOwner(r);
+    const rent=rentOf(r,Y,M), park=r.parking*DB.settings.parkingFee, adj=adjOwner(r,M);
     const adjCell=anyAdj?`<td class="num neg">${adj?fmt(adj):'—'}</td>`:'';
-    const note=adj?`<span style="font-size:11px;color:var(--ink-soft)"> ${r.adjustLabel||''}</span>`:'';
+    const lbl=roomAdjusts(r,M).map(a=>a.label).join('、');
+    const note=adj?`<span style="font-size:11px;color:var(--ink-soft)"> ${lbl}</span>`:'';
     return `<tr><td>${r.no}${note}</td><td class="num">${fmt(rent)}</td><td class="num">${park?fmt(park):'—'}</td>${adjCell}<td class="num">${fmt(rent+park+adj)}</td></tr>`;
   }).join('');
   const income=ownerIncome(Y,M);
@@ -395,8 +402,8 @@ function ownerText(){
   const income=ownerIncome(Y,M), svc=serviceFee(Y,M), cable=isCable(M)?DB.settings.cableFee:0, dep=depositSum(Y,M);
   const out=income-svc-cable-dep;
   let t=`【林口套房代管 · 屋主對帳】民國${Y}年${M}月\n──────────────\n`;
-  activeRooms().forEach(r=>{const rent=rentOf(r,Y,M),p=r.parking*DB.settings.parkingFee,a=adjOwner(r);
-    t+=`${r.no}　房租${fmt(rent)}${p?` 車位${fmt(p)}`:''}${a?` ${r.adjustLabel||'調整'}${fmt(a)}`:''}　小計${fmt(rent+p+a)}\n`;});
+  activeRooms().forEach(r=>{const rent=rentOf(r,Y,M),p=r.parking*DB.settings.parkingFee,a=adjOwner(r,M),lbl=roomAdjusts(r,M).map(x=>x.label).join('、');
+    t+=`${r.no}　房租${fmt(rent)}${p?` 車位${fmt(p)}`:''}${a?` ${lbl}${fmt(a)}`:''}　小計${fmt(rent+p+a)}\n`;});
   t+=`──────────────\n房租收入合計　${fmt(income)}\n代管服務費　− ${fmt(svc)}\n`;
   if(cable)t+=`第四台　− ${fmt(cable)}\n`;
   if(dep)t+=`退押金　− ${fmt(dep)}\n`;
@@ -461,6 +468,27 @@ function viewHist(){
     <div class="tip">範圍從「起算月」到目前;之後月份越記越多,這裡就是你的對帳總表。</div></div>`;
 }
 
+/* ---- 固定調整 / 折扣（每房可多筆，可設時機）---- */
+function viewAdjusts(){
+  const whenOpt=w=>`<option value="every"${w==='every'?' selected':''}>每月</option><option value="even"${w==='even'?' selected':''}>雙月(收電費月)</option><option value="odd"${w==='odd'?' selected':''}>單月</option>`;
+  const cards=DB.rooms.map((r,i)=>{
+    const lines=(r.adjusts||[]).map((a,j)=>`<div style="display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap">
+      <input data-aj-r="${i}" data-aj-j="${j}" data-aj-f="label" value="${a.label||''}" placeholder="名目" style="width:110px">
+      <input type="number" data-aj-r="${i}" data-aj-j="${j}" data-aj-f="amount" value="${a.amount||0}" style="width:80px">
+      <select data-aj-r="${i}" data-aj-j="${j}" data-aj-f="when">${whenOpt(a.when||'every')}</select>
+      <button class="btn ghost sm" data-aj-del="${i}-${j}" style="color:var(--red)">刪</button>
+    </div>`).join('');
+    return `<div style="border-bottom:1px solid var(--line);padding:8px 0">
+      <b>${r.no}</b>${(r.adjusts&&r.adjusts.length)?'':' <span style="color:#bbb;font-size:12px">無調整</span>'}
+      ${lines}
+      <button class="btn ghost sm" data-aj-add="${i}">＋ 新增調整</button>
+    </div>`;
+  }).join('');
+  return `<div class="panel"><h2><span class="bar"></span>固定調整 / 折扣</h2>
+    <div class="sub">負值=折扣(給租客減免)。時機：每月／雙月(只在收電費的雙數月生效，如梯間補貼)／單月。會同時套用到租客訊息與屋主帳。</div>
+    ${cards}</div>`;
+}
+
 /* ---- 設定 ---- */
 function viewSet(){
   const s=DB.settings;
@@ -472,8 +500,6 @@ function viewSet(){
     <td><input type="number" data-r="${i}" data-f="deposit" value="${r.deposit}"></td>
     <td><input type="number" data-r="${i}" data-f="seedReading" value="${r.seedReading}"></td>
     <td><input data-r="${i}" data-f="group" value="${r.group||''}" style="width:48px" placeholder="—"></td>
-    <td><input type="number" data-r="${i}" data-f="adjust" value="${r.adjust||0}" style="width:64px"></td>
-    <td><input data-r="${i}" data-f="adjustLabel" value="${r.adjustLabel||''}" style="width:84px" placeholder="名目"></td>
   </tr>`).join('');
   const tenants=DB.rooms.map((r,i)=>`<div class="panel" style="padding:12px;margin-bottom:10px">
     <b>${r.no}</b>
@@ -484,9 +510,11 @@ function viewSet(){
       <div class="fld"><label>租期迄</label><input data-r="${i}" data-f="end" value="${r.end}" placeholder="116/12/31"></div>
     </div></div>`).join('');
   return `<div class="panel"><h2><span class="bar"></span>房間 · 金額設定</h2>
-    <div class="sub">房租＝純房租；車位＝數量（每個 ${s.parkingFee} 元）；水費＝每月固定；上期讀數＝目前電表最新值。<b>同租客</b>＝填相同代號(如 A)的房會合併成一封；<b>固定調整</b>＝每月折扣(負值)，可命名(梯間補助等)。</div>
-    <div style="overflow-x:auto"><table><thead><tr><th>房號</th><th>房租</th><th>車位數</th><th>水費/月</th><th>押金</th><th>上期讀數</th><th>同租客</th><th>固定調整</th><th>調整名目</th></tr></thead>
+    <div class="sub">房租＝純房租；車位＝數量（每個 ${s.parkingFee} 元）；水費＝每月固定；上期讀數＝目前電表最新值。<b>同租客</b>＝填相同代號(如 A)的房會合併成一封訊息。調整/折扣請在下方「固定調整」設定。</div>
+    <div style="overflow-x:auto"><table><thead><tr><th>房號</th><th>房租</th><th>車位數</th><th>水費/月</th><th>押金</th><th>上期讀數</th><th>同租客</th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>
+
+    ${viewAdjusts()}
 
     <div class="panel"><h2><span class="bar"></span>常數 · 起算</h2>
     <div class="grid2">
@@ -544,8 +572,19 @@ function bind(){
   // 房間 / 租客欄位
   document.querySelectorAll('[data-r]').forEach(inp=>inp.onchange=()=>{
     const r=DB.rooms[+inp.dataset.r], f=inp.dataset.f;
-    r[f]=(['name','contact','start','end','group','adjustLabel'].includes(f))?inp.value:(+inp.value||0); save();
-    if(['name','group','adjust','adjustLabel'].includes(f)) render();
+    r[f]=(['name','contact','start','end','group'].includes(f))?inp.value:(+inp.value||0); save();
+    if(['name','group'].includes(f)) render();
+  });
+  // 固定調整（多筆）
+  document.querySelectorAll('[data-aj-r]').forEach(inp=>inp.onchange=()=>{
+    const r=DB.rooms[+inp.dataset.ajR], j=+inp.dataset.ajJ, f=inp.dataset.ajF;
+    r.adjusts[j][f]=(f==='amount')?(+inp.value||0):inp.value; save(); render();
+  });
+  document.querySelectorAll('[data-aj-add]').forEach(b=>b.onclick=()=>{
+    const r=DB.rooms[+b.dataset.ajAdd]; (r.adjusts=r.adjusts||[]).push({label:'',amount:0,when:'every'}); save(); render();
+  });
+  document.querySelectorAll('[data-aj-del]').forEach(b=>b.onclick=()=>{
+    const[i,j]=b.dataset.ajDel.split('-').map(Number); DB.rooms[i].adjusts.splice(j,1); save(); render();
   });
   // 常數
   document.querySelectorAll('[data-s]').forEach(inp=>inp.onchange=()=>{
