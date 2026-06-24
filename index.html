@@ -238,8 +238,10 @@ function ownerSub(r){ return rentOf(r)+r.parking*DB.settings.parkingFee; }      
 function rentOf(r,y,m){ const ov=(y!=null)?(DB.months[mkey(y,m)]?.rentOverride?.[r.no]):null; return (ov!=null&&ov!=='')?+ov:r.rent; }
 const activeRooms = ()=>DB.rooms.filter(r=>r.active);
 
-/* ---- 電費：找上期讀數（往前找最近一筆已輸入的本期讀數，否則用 seedReading）---- */
-function prevReading(no, y, m){
+/* ---- 電費：上期讀數 ----
+   autoPrev：往前找最近一筆已輸入的本期讀數，否則用設定的 seedReading(起點)。
+   effPrev：若該月手動填了「上期」就用它，否則用 autoPrev。 */
+function autoPrev(no, y, m){
   for(let i=1;i<=24;i++){
     let mm=m-i, yy=y; while(mm<=0){mm+=12;yy--;}
     const v=DB.months[mkey(yy,mm)]?.readings?.[no];
@@ -247,10 +249,14 @@ function prevReading(no, y, m){
   }
   const r=DB.rooms.find(x=>x.no===no); return r?+r.seedReading:0;
 }
+function effPrev(no, y, m){
+  const ov=DB.months[mkey(y,m)]?.prevReadings?.[no];
+  return (ov!=null && ov!=='') ? +ov : autoPrev(no,y,m);
+}
 function elecOf(r,y,m){
   const cur=DB.months[mkey(y,m)]?.readings?.[r.no];
   if(cur==null||cur==='') return null;          // 尚未輸入本期 → 無電費
-  const prev=prevReading(r.no,y,m);
+  const prev=effPrev(r.no,y,m);
   const use=Math.max(0,+cur-prev);
   return {prev,cur:+cur,use,amount:use*DB.settings.elecRate};
 }
@@ -401,19 +407,20 @@ function viewBill(){
 function viewElec(){
   const mo=getMonth(Y,M);
   const rows=activeRooms().map(r=>{
-    const prev=prevReading(r.no,Y,M);
+    const auto=autoPrev(r.no,Y,M);
+    const prevOv=mo.prevReadings?.[r.no]??'';
     const cur=mo.readings[r.no]??'';
     const e=elecOf(r,Y,M);
     return `<tr>
       <td>${r.no}</td>
-      <td class="num">${prev}</td>
+      <td><input type="number" data-prev="${r.no}" value="${prevOv}" placeholder="${auto}"></td>
       <td><input type="number" data-reading="${r.no}" value="${cur}" placeholder="本期"></td>
       <td class="num">${e?e.use+' 度':'—'}</td>
       <td class="num">${e?fmt(e.amount)+' 元':'—'}</td>
     </tr>`;
   }).join('');
   return `<div class="panel"><h2><span class="bar"></span>收電費 · ${Y}年${M}月</h2>
-    <div class="sub">輸入各房本期電表度數（取整數、捨去最後紅色 0.1 位）。用量＝本期−上期，電費＝用量×${DB.settings.elecRate} 元。</div>
+    <div class="sub">填本期電表度數(取整數、捨去最後紅色 0.1 位)。用量＝本期−上期,電費＝用量×${DB.settings.elecRate} 元。<b>上期</b>會自動帶上次的本期(灰字為自動值);第一次用、或要修正時可直接在上期欄填入。</div>
     <div style="background:var(--bg2);border-radius:12px;padding:12px;margin-bottom:12px">
       <div style="font-weight:700;color:var(--clay-d);margin-bottom:6px">📷 批次辨識電表照片(自動填入)</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -664,6 +671,10 @@ function bind(){
   const ca=$('[data-copy-acct]'); if(ca) ca.onclick=()=>copyText(`${DB.settings.bank.name}\n代號 ${DB.settings.bank.code}\n帳號 ${DB.settings.bank.acct}`);
   // 電表 OCR 批次辨識
   const ob=$('#ocrBtn'); if(ob) ob.onclick=runOCR;
+  // 電表上期度數(手動覆寫;空白=用自動值)
+  document.querySelectorAll('[data-prev]').forEach(inp=>inp.onchange=()=>{
+    const mo=getMonth(Y,M); (mo.prevReadings=mo.prevReadings||{})[inp.dataset.prev]=inp.value; save(); render();
+  });
   // 電表本期度數
   document.querySelectorAll('[data-reading]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).readings[inp.dataset.reading]=inp.value;save();render();});
   // 退押金
