@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>套房代管記帳（原型）</title>
+<title>套房代管記帳</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ===== 設計系統（沿用站內 style.css 的變數，內嵌成單檔可開）===== */
 :root{
@@ -96,7 +97,8 @@ td input:focus{outline:none;border-color:var(--clay)}
 <div class="top">
   <div class="top-inner">
     <span class="logo">套房代管記帳</span>
-    <span class="proto-tag">原型 · 本機儲存</span>
+    <span class="proto-tag">雲端同步</span>
+    <button id="logoutBtn" class="btn ghost sm" style="padding:5px 10px;font-size:12px">登出</button>
     <div class="month-pick">
       <span>民國</span>
       <input id="yIn" type="number" style="width:64px" >
@@ -115,6 +117,18 @@ td input:focus{outline:none;border-color:var(--clay)}
 
 <div class="toast" id="toast"></div>
 
+<!-- 登入畫面（未登入時覆蓋全畫面）-->
+<div id="loginOverlay" style="position:fixed;inset:0;background:var(--bg);z-index:500;display:none;align-items:center;justify-content:center;padding:20px">
+  <div class="panel" style="max-width:340px;width:100%">
+    <h2 style="font-family:var(--serif);font-size:22px;margin-bottom:2px">套房代管記帳</h2>
+    <div class="sub">請登入以使用</div>
+    <div class="fld"><label>Email</label><input id="loginEmail" type="email" autocomplete="username"></div>
+    <div class="fld"><label>密碼</label><input id="loginPw" type="password" autocomplete="current-password"></div>
+    <button class="btn" id="loginBtn" style="width:100%">登入</button>
+    <div id="loginMsg" style="color:var(--red);font-size:13px;margin-top:8px;min-height:18px"></div>
+  </div>
+</div>
+
 <script>
 /* =========================================================================
    套房代管記帳 — 原型（純前端、localStorage）
@@ -123,6 +137,11 @@ td input:focus{outline:none;border-color:var(--clay)}
    ========================================================================= */
 const $ = s => document.querySelector(s);
 const LS_KEY = 'rentmgmt_proto_v4';
+
+/* ---- Supabase 設定（anon/publishable key 可公開，保護靠 RLS + 登入）---- */
+const SUPA_URL = 'https://zhxiygrnjotjrjxcmwyg.supabase.co';
+const SUPA_KEY = 'sb_publishable_5C-yhMHRr8U_jr_7AO9ldw_ocG4e0sJ';
+let sb=null, SB_USER=null;
 
 /* ---- 預設資料（房間、常數，依使用者提供）---- */
 const DEFAULT = {
@@ -136,7 +155,7 @@ const DEFAULT = {
     startRoc:115, startMonth:1, // 起算月份（民國）
     seedRemit:78000,      // 起算月「上月實際匯給屋主金額」起始值（請改成真實值）
     adjustToOwner:false,  // 折扣由代管方吸收→屋主照領原租金（false=屋主帳不扣折扣）
-    bank:{name:'中國信託 江翠分行', code:'8220576', acct:'576540669668'} // 屋主匯款帳戶
+    bank:{name:'', code:'', acct:''} // 屋主匯款帳戶（敏感→登入後在設定頁輸入，存雲端，不寫進程式碼）
   },
   // group：同一租客的多間房（同群組合併成一封訊息）
   // adjusts：每房可有多筆調整（負值=折扣），when=every每月／even雙月(收電費月)／odd單月
@@ -155,13 +174,60 @@ const DEFAULT = {
   months:{} // key "YYYY-M" -> {readings:{no:本期度數}, deposits:{no:退押金}, rentOverride:{no:當月房租}, bill:{elec,water}, note}
 };
 
-/* ---- 載入 / 儲存 ---- */
-let DB = load();
-function load(){
-  try{ const s = JSON.parse(localStorage.getItem(LS_KEY)); if(s&&s.rooms) return s; }catch(e){}
-  return structuredClone(DEFAULT);
+/* ---- 載入 / 儲存（雲端為主、本機為離線備份）---- */
+let DB = structuredClone(DEFAULT);
+let saveT;
+function save(){
+  localStorage.setItem(LS_KEY, JSON.stringify(DB));   // 離線備份
+  clearTimeout(saveT); saveT=setTimeout(saveCloud, 600); // 去抖動寫雲端
 }
-function save(){ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+async function saveCloud(){
+  if(!SB_USER) return;
+  const {error}=await sb.from('app_state').upsert({uid:SB_USER.id, data:DB, updated_at:new Date().toISOString()});
+  if(error){ console.error(error); toast('雲端儲存失敗，已存本機'); }
+}
+// 補上預設缺漏的欄位，避免日後新增欄位讓舊資料出錯
+function migrate(d){
+  d.settings=Object.assign(structuredClone(DEFAULT.settings), d.settings||{});
+  if(!d.settings.bank) d.settings.bank=structuredClone(DEFAULT.settings.bank);
+  d.rooms=d.rooms||structuredClone(DEFAULT.rooms);
+  d.months=d.months||{};
+  return d;
+}
+async function loadCloud(){
+  try{
+    const {data}=await sb.from('app_state').select('data').eq('uid',SB_USER.id).maybeSingle();
+    if(data&&data.data&&data.data.rooms){ DB=migrate(data.data); return; }
+  }catch(e){ console.error(e); }
+  // 雲端沒有資料 → 用本機備份(若有)或預設，並寫上雲端
+  try{ const s=JSON.parse(localStorage.getItem(LS_KEY)); if(s&&s.rooms){ DB=migrate(s); await saveCloud(); return; } }catch(e){}
+  DB=structuredClone(DEFAULT); await saveCloud();
+}
+
+/* ---- 登入 / 啟動 ---- */
+async function bootstrap(){
+  sb=window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  $('#logoutBtn').onclick=async()=>{ await sb.auth.signOut(); location.reload(); };
+  $('#loginBtn').onclick=doLogin;
+  $('#loginPw').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+  const {data:{session}}=await sb.auth.getSession();
+  if(session) await afterLogin(); else $('#loginOverlay').style.display='flex';
+}
+async function doLogin(){
+  const email=$('#loginEmail').value.trim(), password=$('#loginPw').value;
+  $('#loginMsg').textContent='登入中…';
+  const {error}=await sb.auth.signInWithPassword({email,password});
+  if(error){ $('#loginMsg').textContent='登入失敗：'+error.message; return; }
+  $('#loginMsg').textContent='';
+  await afterLogin();
+}
+async function afterLogin(){
+  const {data:{user}}=await sb.auth.getUser();
+  SB_USER=user;
+  await loadCloud();
+  $('#loginOverlay').style.display='none';
+  init();
+}
 
 /* ---- 工具 ---- */
 const fmt = n => Math.round(n).toLocaleString('en-US');      // 金額：千分位
@@ -615,7 +681,7 @@ function importJSON(e){
 let toastT;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1600);}
 
-init();
+bootstrap();
 </script>
 </body>
 </html>
