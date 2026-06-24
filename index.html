@@ -447,12 +447,11 @@ function viewOwner(){
   // 退押金輸入
   const depInputs=activeRooms().map(r=>`<div class="fld"><label>${r.no} 退押金</label><input type="number" data-dep="${r.no}" value="${mo.deposits[r.no]??''}" placeholder="0"></div>`).join('');
   return `<div class="panel"><h2><span class="bar"></span>屋主對帳 · ${Y}年${M}月</h2>
-    <div class="sub">上月實際匯款 ${fmt(pr)} 元 → 服務費＝(${fmt(pr)}−${fmt(DB.settings.svcDeduct)})×${DB.settings.svcRate*100}%＝<b>${fmt(svc)}</b> 元</div>
     <div style="overflow-x:auto"><table><thead><tr><th>房號</th><th>房租</th><th>車位</th>${anyAdj?'<th>調整</th>':''}<th>小計</th></tr></thead>
     <tbody>${rows}<tr class="sum"><td>合計</td><td colspan="${anyAdj?3:2}"></td><td class="num">${fmt(income)}</td></tr></tbody></table></div>
     <div class="statement" style="margin-top:14px">
       <div class="row"><span>房租收入合計（含車位${anyAdj?'、調整':''}）</span><span class="num">${fmt(income)}</span></div>
-      <div class="row"><span>代管服務費</span><span class="num neg">− ${fmt(svc)}</span></div>
+      <div class="row"><span>代管服務費<br><span style="font-size:11px;color:var(--ink-soft)">(上月匯款 ${fmt(pr)} − ${fmt(DB.settings.svcDeduct)}) × ${DB.settings.svcRate*100}%</span></span><span class="num neg">− ${fmt(svc)}</span></div>
       ${cable?`<div class="row"><span>第四台（${M}月）</span><span class="num neg">− ${fmt(cable)}</span></div>`:''}
       ${dep?`<div class="row"><span>退押金</span><span class="num neg">− ${fmt(dep)}</span></div>`:''}
       <div class="row big"><span>本月實匯屋主</span><span class="num">${fmt(out)}</span></div>
@@ -474,11 +473,11 @@ function viewOwner(){
 }
 function ownerText(){
   const income=ownerIncome(Y,M), svc=serviceFee(Y,M), cable=isCable(M)?DB.settings.cableFee:0, dep=depositSum(Y,M);
-  const out=income-svc-cable-dep;
+  const out=income-svc-cable-dep, pr=prevRemit(Y,M);
   let t=`【林口套房代管 · 屋主對帳】民國${Y}年${M}月\n──────────────\n`;
   activeRooms().forEach(r=>{const rent=rentOf(r,Y,M),p=r.parking*DB.settings.parkingFee,a=adjOwner(r,M),lbl=roomAdjusts(r,M).map(x=>x.label).join('、');
     t+=`${r.no}　房租${fmt(rent)}${p?` 車位${fmt(p)}`:''}${a?` ${lbl}${fmt(a)}`:''}　小計${fmt(rent+p+a)}\n`;});
-  t+=`──────────────\n房租收入合計　${fmt(income)}\n代管服務費　− ${fmt(svc)}\n`;
+  t+=`──────────────\n房租收入合計　${fmt(income)}\n代管服務費 (上月匯款${fmt(pr)}−${fmt(DB.settings.svcDeduct)})×${DB.settings.svcRate*100}%　− ${fmt(svc)}\n`;
   if(cable)t+=`第四台　− ${fmt(cable)}\n`;
   if(dep)t+=`退押金　− ${fmt(dep)}\n`;
   t+=`──────────────\n本月實匯屋主　${fmt(out)}\n\n`;
