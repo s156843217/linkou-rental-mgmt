@@ -122,7 +122,7 @@ td input:focus{outline:none;border-color:var(--clay)}
    所有金流計算寫成純函式，方便日後搬到後端 / LINE 重用。
    ========================================================================= */
 const $ = s => document.querySelector(s);
-const LS_KEY = 'rentmgmt_proto_v3';
+const LS_KEY = 'rentmgmt_proto_v4';
 
 /* ---- 預設資料（房間、常數，依使用者提供）---- */
 const DEFAULT = {
@@ -135,15 +135,15 @@ const DEFAULT = {
     elecRate:5,           // 每度電價
     startRoc:115, startMonth:1, // 起算月份（民國）
     seedRemit:78000,      // 起算月「上月實際匯給屋主金額」起始值（請改成真實值）
-    adjustToOwner:true,   // 固定調整（梯間補助/減免/補貼）是否由屋主吸收（true=屋主帳也扣，待確認）
+    adjustToOwner:false,  // 折扣由代管方吸收→屋主照領原租金（false=屋主帳不扣折扣）
     bank:{name:'中國信託 江翠分行', code:'8220576', acct:'576540669668'} // 屋主匯款帳戶
   },
   // group：同一租客的多間房（同群組合併成一封訊息）
   // adjusts：每房可有多筆調整（負值=折扣），when=every每月／even雙月(收電費月)／odd單月
   // seedReading = 目前電表最新讀數（由電表照片 OCR 得來，當作下一期的「上期」）
   rooms:[
-    {no:'101',rent:23000,parking:0,water:0,  deposit:0,seedReading:0,    group:'A',adjusts:[{label:'梯間補助',amount:-500,when:'every'}],name:'',contact:'',start:'',end:'',active:true},
-    {no:'201',rent:9500, parking:0,water:0,  deposit:0,seedReading:17208,group:'A',adjusts:[{label:'梯間減免',amount:-100,when:'every'},{label:'梯間補貼',amount:-100,when:'even'}],name:'',contact:'',start:'',end:'',active:true},
+    {no:'101',rent:23000,parking:0,water:0,  deposit:0,seedReading:0,    group:'A',adjusts:[{label:'梯間補助',amount:-500,when:'even'}],name:'',contact:'',start:'',end:'',active:true},
+    {no:'201',rent:9500, parking:0,water:0,  deposit:0,seedReading:17208,group:'A',adjusts:[{label:'梯間減免',amount:-100,when:'even'}],name:'',contact:'',start:'',end:'',active:true},
     {no:'202',rent:8000, parking:1,water:0,  deposit:0,seedReading:20874,group:'', adjusts:[],name:'',contact:'',start:'',end:'',active:true},
     {no:'203',rent:10500,parking:0,water:0,  deposit:0,seedReading:21680,group:'A',adjusts:[],name:'',contact:'',start:'',end:'',active:true},
     {no:'301',rent:9000, parking:2,water:0,  deposit:0,seedReading:31941,group:'', adjusts:[{label:'梯間補貼',amount:-200,when:'even'}],name:'',contact:'',start:'',end:'',active:true},
@@ -485,7 +485,7 @@ function viewAdjusts(){
     </div>`;
   }).join('');
   return `<div class="panel"><h2><span class="bar"></span>固定調整 / 折扣</h2>
-    <div class="sub">負值=折扣(給租客減免)。時機：每月／雙月(只在收電費的雙數月生效，如梯間補貼)／單月。會同時套用到租客訊息與屋主帳。</div>
+    <div class="sub">負值=折扣(給租客減免)。時機：每月／雙月(只在收電費的雙數月生效，如梯間補貼)／單月。套用到租客訊息；屋主帳是否扣由「常數·起算」的『折扣由誰吸收』決定（目前：${DB.settings.adjustToOwner?'屋主吸收':'代管方吸收→屋主照領原租金'}）。</div>
     ${cards}</div>`;
 }
 
