@@ -230,7 +230,7 @@ function tenantBill(r,y,m){
 /* =========================================================================
    分頁
    ========================================================================= */
-const TABS=[['bill','租客帳單'],['elec','收電費'],['owner','屋主對帳'],['util','水電盈虧'],['set','設定']];
+const TABS=[['bill','租客帳單'],['elec','收電費'],['owner','屋主對帳'],['util','水電盈虧'],['hist','歷史帳本'],['set','設定']];
 let cur='bill', Y=115, M=6;
 
 function init(){
@@ -256,6 +256,7 @@ function render(){
   if(cur==='elec')  v.innerHTML=viewElec();
   if(cur==='owner') v.innerHTML=viewOwner();
   if(cur==='util')  v.innerHTML=viewUtil();
+  if(cur==='hist')  v.innerHTML=viewHist();
   if(cur==='set')   v.innerHTML=viewSet();
   bind();
 }
@@ -363,6 +364,41 @@ function viewUtil(){
     </div></div>`;
 }
 
+/* ---- 歷史帳本：列出每個月的關鍵數字，點「查看」跳到該月 ---- */
+function monthRange(){
+  let y=DB.settings.startRoc, m=DB.settings.startMonth;   // 起算月
+  let ey=Y, em=M;                                          // 結束：取「目前選的月」與「有資料的最後一月」較晚者
+  Object.keys(DB.months).forEach(k=>{const[yy,mm]=k.split('-').map(Number);if(yy>ey||(yy===ey&&mm>em)){ey=yy;em=mm;}});
+  const arr=[]; let g=0;
+  while((y<ey||(y===ey&&m<=em))&&g++<60){ arr.push([y,m]); m++; if(m>12){m=1;y++;} }
+  return arr.reverse();                                    // 新到舊
+}
+function monthHasData(y,m){ const o=DB.months[mkey(y,m)]; if(!o)return false;
+  return Object.keys(o.readings||{}).length||Object.values(o.deposits||{}).some(v=>+v)||(+o.bill?.elec||+o.bill?.water)||o.note; }
+function viewHist(){
+  const rows=monthRange().map(([y,m])=>{
+    const income=ownerIncome(y,m),svc=serviceFee(y,m),cable=isCable(m)?DB.settings.cableFee:0,dep=depositSum(y,m),out=remit(y,m);
+    const elecGot=activeRooms().reduce((a,r)=>{const e=elecOf(r,y,m);return a+(e?e.amount:0);},0);
+    const here=(y===Y&&m===M);
+    return `<tr style="${here?'background:#FBF3E0':''}">
+      <td><b>${roc(y)}年${m}月</b>${m%2===0?' <span style="color:var(--teal-d);font-size:11px">雙</span>':''}${monthHasData(y,m)?'':' <span style="color:#bbb;font-size:11px">未填</span>'}</td>
+      <td class="num">${fmt(income)}</td>
+      <td class="num neg">−${fmt(svc)}</td>
+      <td class="num">${cable?'−'+fmt(cable):'—'}</td>
+      <td class="num">${dep?'−'+fmt(dep):'—'}</td>
+      <td class="num"><b>${fmt(out)}</b></td>
+      <td class="num">${elecGot?fmt(elecGot):'—'}</td>
+      <td><button class="btn ghost sm" data-jump="${y}-${m}">查看</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="panel"><h2><span class="bar"></span>歷史帳本</h2>
+    <div class="sub">每個月的紀錄都保留著。點「查看」會跳到那個月,各分頁就會顯示該月的舊資料。</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>月份</th><th>房租收入</th><th>服務費</th><th>第四台</th><th>退押金</th><th>實匯屋主</th><th>收電費</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="tip">範圍從「起算月」到目前;之後月份越記越多,這裡就是你的對帳總表。</div></div>`;
+}
+
 /* ---- 設定 ---- */
 function viewSet(){
   const s=DB.settings;
@@ -423,6 +459,11 @@ function bind(){
   document.querySelectorAll('[data-dep]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).deposits[inp.dataset.dep]=inp.value;save();render();});
   // 台電台水帳單
   document.querySelectorAll('[data-bill]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).bill[inp.dataset.bill]=inp.value;save();render();});
+  // 歷史帳本：跳到該月（切到屋主對帳）
+  document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{
+    const[y,m]=b.dataset.jump.split('-').map(Number); Y=y; M=m;
+    $('#yIn').value=Y; $('#mIn').value=M; cur='owner'; render();
+  });
   // 房間 / 租客欄位
   document.querySelectorAll('[data-r]').forEach(inp=>inp.onchange=()=>{
     const r=DB.rooms[+inp.dataset.r], f=inp.dataset.f;
