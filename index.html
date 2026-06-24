@@ -414,9 +414,17 @@ function viewElec(){
   }).join('');
   return `<div class="panel"><h2><span class="bar"></span>收電費 · ${Y}年${M}月</h2>
     <div class="sub">輸入各房本期電表度數（取整數、捨去最後紅色 0.1 位）。用量＝本期−上期，電費＝用量×${DB.settings.elecRate} 元。</div>
+    <div style="background:var(--bg2);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:700;color:var(--clay-d);margin-bottom:6px">📷 批次辨識電表照片(自動填入)</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="ocrFiles" accept="image/*" multiple style="font-size:13px">
+        <button class="btn sm teal" id="ocrBtn">辨識並自動填入</button>
+        <span id="ocrStatus" style="font-size:12.5px;color:var(--ink-soft)"></span>
+      </div>
+      <div class="tip" style="margin-top:8px">一次選多張電表照片(照片要看得到手寫房號),Claude 自動讀「房號＋讀數」填進下表,你再核對。照片會先縮圖再上傳。</div>
+    </div>
     <table><thead><tr><th>房號</th><th>上期</th><th>本期度數</th><th>用量</th><th>電費</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <div class="tip">日後正式版：可一次批次上傳電表照片，由 Claude 視覺自動讀「房號＋讀數」填進這張表，你只要核對。</div></div>`;
+    <tbody>${rows}</tbody></table></div>`;
 }
 
 /* ---- 屋主對帳 ---- */
@@ -624,6 +632,8 @@ function bind(){
   document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{copyText($('#'+b.dataset.copy).textContent);});
   const co=$('[data-copy-owner]'); if(co) co.onclick=()=>copyText(ownerText());
   const ca=$('[data-copy-acct]'); if(ca) ca.onclick=()=>copyText(`${DB.settings.bank.name}\n代號 ${DB.settings.bank.code}\n帳號 ${DB.settings.bank.acct}`);
+  // 電表 OCR 批次辨識
+  const ob=$('#ocrBtn'); if(ob) ob.onclick=runOCR;
   // 電表本期度數
   document.querySelectorAll('[data-reading]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).readings[inp.dataset.reading]=inp.value;save();render();});
   // 退押金
@@ -680,6 +690,49 @@ function importJSON(e){
 }
 let toastT;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1600);}
+
+/* ---- 電表 OCR:照片縮圖→base64,送 Edge Function 用 Claude 辨識 ---- */
+function fileToB64(file, maxEdge=1600){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      const s=Math.min(1, maxEdge/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg',0.85).split(',')[1]); // 只取 base64
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('圖片讀取失敗')); };
+    img.src=url;
+  });
+}
+async function runOCR(){
+  const files=[...($('#ocrFiles')?.files||[])];
+  if(!files.length){ toast('請先選電表照片'); return; }
+  const st=$('#ocrStatus'); const btn=$('#ocrBtn');
+  if(st) st.textContent=`辨識中…(${files.length} 張,約需數十秒)`;
+  if(btn) btn.disabled=true;
+  try{
+    const images=[];
+    for(const f of files) images.push({media_type:'image/jpeg', data: await fileToB64(f)});
+    const {data,error}=await sb.functions.invoke('read-meters',{body:{images}});
+    if(error) throw error;
+    let res=data; if(typeof res==='string'){ try{res=JSON.parse(res);}catch(e){ res={}; } }
+    const list=(res&&res.readings)||[];
+    const mo=getMonth(Y,M); let ok=0; const miss=[];
+    list.forEach(r=>{
+      const room=DB.rooms.find(x=>x.no===String(r.room));
+      if(room && r.reading!=null){ mo.readings[room.no]=r.reading; ok++; }
+      else miss.push(r.room||'?');
+    });
+    save(); render();
+    toast(`已填入 ${ok} 間${miss.length?(';未對應 '+miss.join('、')):''},請核對`);
+  }catch(e){
+    const s=$('#ocrStatus'); if(s) s.textContent='辨識失敗:'+(e.message||e);
+    const b=$('#ocrBtn'); if(b) b.disabled=false;
+  }
+}
 
 bootstrap();
 </script>
