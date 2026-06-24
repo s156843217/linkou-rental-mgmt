@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>套房代管記帳（原型）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
+<style>
+/* ===== 設計系統（沿用站內 style.css 的變數，內嵌成單檔可開）===== */
+:root{
+  --bg:#FBF6EE; --bg2:#F4ECDF; --ink:#26221C; --ink-soft:#5C544A;
+  --line:#E4D8C5; --card:#FFFFFF;
+  --clay:#BD5E39; --clay-d:#9C4A2B; --teal:#3C7A62; --teal-d:#2E5F4C;
+  --amber:#C2902B; --red:#B23F2A; --gold:#C9A24A;
+  --shadow:0 8px 28px rgba(60,44,28,.10), 0 2px 6px rgba(60,44,28,.06);
+  --serif:"Noto Serif TC",serif;
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
+body{background-image:radial-gradient(circle at 12% -5%,#F7EEDF 0,transparent 42%),radial-gradient(circle at 110% 8%,#F0E5D2 0,transparent 46%);padding-bottom:60px}
+
+/* 頂部標頭 */
+.top{background:#2C2620;color:#F7EEDF;position:sticky;top:0;z-index:50;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.top-inner{max-width:1000px;margin:0 auto;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.top .logo{font-family:var(--serif);font-weight:900;font-size:16px;color:var(--gold);white-space:nowrap}
+.proto-tag{font-size:11px;background:rgba(201,162,74,.2);color:var(--gold);padding:2px 8px;border-radius:999px}
+.month-pick{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:14px}
+.month-pick input,.month-pick select{padding:6px 8px;border-radius:8px;border:1px solid #5a5046;background:#3a322a;color:#F7EEDF;font-family:var(--sans);font-size:14px}
+.month-pick .roc{font-weight:700;color:var(--gold);white-space:nowrap}
+.parity{font-size:12px;padding:2px 8px;border-radius:999px;font-weight:700}
+.parity.even{background:rgba(60,122,98,.3);color:#bfe6d4}
+.parity.odd{background:rgba(189,94,57,.3);color:#f0c3ac}
+
+/* 分頁 */
+.tabs{max-width:1000px;margin:0 auto;padding:10px 14px 0;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:none;background:transparent;font-family:var(--sans);font-weight:700;font-size:14px;color:var(--ink-soft);
+  padding:9px 14px;border-radius:10px 10px 0 0;cursor:pointer;white-space:nowrap}
+.tab.active{background:var(--card);color:var(--clay-d);box-shadow:0 -2px 8px rgba(60,44,28,.06)}
+
+.wrap{max-width:1000px;margin:0 auto;padding:6px 14px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px}
+.panel h2{font-family:var(--serif);font-size:18px;font-weight:900;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.panel h2 .bar{width:5px;height:20px;background:var(--clay);border-radius:3px}
+.sub{font-size:12.5px;color:var(--ink-soft);margin-bottom:12px}
+
+.btn{border:none;cursor:pointer;font-family:var(--sans);font-weight:700;font-size:14px;padding:9px 16px;border-radius:10px;background:var(--clay);color:#fff;transition:.15s}
+.btn:hover{background:var(--clay-d)}
+.btn.ghost{background:#fff;color:var(--clay-d);border:1.5px solid var(--line)}
+.btn.sm{padding:6px 12px;font-size:13px}
+.btn.teal{background:var(--teal)}.btn.teal:hover{background:var(--teal-d)}
+
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{font-size:12px;color:var(--clay-d);font-weight:700;border-bottom:2px solid var(--line)}
+tr.sum td{font-weight:900;border-top:2px solid var(--ink);border-bottom:none;font-size:15px}
+td input{width:90px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:var(--sans);font-size:14px;text-align:right;background:#FFFDF9}
+td input:focus{outline:none;border-color:var(--clay)}
+.num{font-variant-numeric:tabular-nums}
+.neg{color:var(--red)}.pos{color:var(--teal-d)}
+
+/* 設定表單 */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fld{margin-bottom:10px}
+.fld label{display:block;font-size:12px;font-weight:700;color:var(--clay-d);margin-bottom:4px}
+.fld input{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font-family:var(--sans);font-size:14px;background:#FFFDF9}
+.fld input:focus{outline:none;border-color:var(--clay)}
+
+/* 租客 LINE 卡 */
+.bills{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.billcard{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#FFFDF9}
+.billcard .bh{background:var(--bg2);padding:8px 12px;font-weight:900;font-family:var(--serif);display:flex;justify-content:space-between;align-items:center}
+.billcard .bh .who{font-size:12px;font-weight:500;color:var(--ink-soft)}
+.billcard pre{font-family:var(--sans);font-size:13.5px;white-space:pre-wrap;padding:12px;line-height:1.7;margin:0;min-height:90px}
+.billcard .bf{padding:8px 12px;border-top:1px dashed var(--line);text-align:right}
+
+/* 對帳輸出 */
+.statement{background:#FFFDF9;border:1px solid var(--line);border-radius:12px;padding:14px;font-size:14px}
+.statement .row{display:flex;justify-content:space-between;padding:3px 0}
+.statement .rule{border-top:1px solid var(--line);margin:6px 0}
+.statement .big{font-weight:900;font-size:16px;border-top:2px solid var(--ink);margin-top:6px;padding-top:8px}
+
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;
+  padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:.3s;z-index:999}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.tip{background:#FBF3E0;border:1px solid #EBD8AE;border-radius:10px;padding:10px 14px;font-size:12.5px;color:#7a6a3e;margin-top:10px}
+.hide{display:none}
+@media(max-width:560px){.grid2{grid-template-columns:1fr}.month-pick{width:100%;margin-left:0}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="top-inner">
+    <span class="logo">套房代管記帳</span>
+    <span class="proto-tag">原型 · 本機儲存</span>
+    <div class="month-pick">
+      <span>民國</span>
+      <input id="yIn" type="number" style="width:64px" >
+      <span>年</span>
+      <select id="mIn"></select>
+      <span>月</span>
+      <span class="roc" id="rocLbl"></span>
+      <span class="parity" id="parityLbl"></span>
+    </div>
+  </div>
+</div>
+
+<div class="tabs" id="tabs"></div>
+
+<div class="wrap" id="view"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   套房代管記帳 — 原型（純前端、localStorage）
+   目的：先讓使用者看實際呈現、逐步調整版面；確認後再接 Supabase + Claude OCR。
+   所有金流計算寫成純函式，方便日後搬到後端 / LINE 重用。
+   ========================================================================= */
+const $ = s => document.querySelector(s);
+const LS_KEY = 'rentmgmt_proto_v1';
+
+/* ---- 預設資料（房間、常數，依使用者提供）---- */
+const DEFAULT = {
+  settings:{
+    svcDeduct:19000,      // 服務費基數扣除額
+    svcRate:0.10,         // 服務費比例
+    cableFee:5002,        // 第四台費（逢 cableMonths 從屋主匯款扣）
+    cableMonths:[3,6,9,12],
+    parkingFee:100,       // 每個機車車位 / 月
+    elecRate:5,           // 每度電價
+    startRoc:115, startMonth:1, // 起算月份（民國）
+    seedRemit:78000       // 起算月「上月實際匯給屋主金額」起始值（請改成真實值）
+  },
+  // seedReading = 目前電表最新讀數（由電表照片 OCR 得來，當作下一期的「上期」）
+  rooms:[
+    {no:'101',rent:23000,parking:0,water:0,  deposit:0,seedReading:0,    name:'',contact:'',start:'',end:'',active:true},
+    {no:'201',rent:9500, parking:0,water:0,  deposit:0,seedReading:17208,name:'',contact:'',start:'',end:'',active:true},
+    {no:'202',rent:8000, parking:1,water:0,  deposit:0,seedReading:20874,name:'',contact:'',start:'',end:'',active:true},
+    {no:'203',rent:10500,parking:0,water:0,  deposit:0,seedReading:21680,name:'',contact:'',start:'',end:'',active:true},
+    {no:'301',rent:9000, parking:2,water:0,  deposit:0,seedReading:31941,name:'',contact:'',start:'',end:'',active:true},
+    {no:'302',rent:9500, parking:0,water:0,  deposit:0,seedReading:17851,name:'',contact:'',start:'',end:'',active:true},
+    {no:'303',rent:10000,parking:1,water:100,deposit:0,seedReading:21151,name:'',contact:'',start:'',end:'',active:true},
+    {no:'401',rent:8500, parking:2,water:100,deposit:0,seedReading:18075,name:'',contact:'',start:'',end:'',active:true},
+    {no:'402',rent:8500, parking:0,water:100,deposit:0,seedReading:17147,name:'',contact:'',start:'',end:'',active:true},
+  ],
+  months:{} // key "YYYY-M" -> {readings:{no:本期度數}, deposits:{no:退押金}, rentOverride:{no:當月房租}, bill:{elec,water}, note}
+};
+
+/* ---- 載入 / 儲存 ---- */
+let DB = load();
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(LS_KEY)); if(s&&s.rooms) return s; }catch(e){}
+  return structuredClone(DEFAULT);
+}
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+
+/* ---- 工具 ---- */
+const fmt = n => Math.round(n).toLocaleString('en-US');      // 金額：千分位
+const roc = y => y - 1911;                                    // 西元→民國
+function mkey(y,m){ return y+'-'+m; }
+function getMonth(y,m){ const k=mkey(y,m); if(!DB.months[k]) DB.months[k]={readings:{},deposits:{},rentOverride:{},bill:{},note:''}; return DB.months[k]; }
+function ownerSub(r){ return rentOf(r)+r.parking*DB.settings.parkingFee; }       // 進屋主：房租+車位
+function rentOf(r,y,m){ const ov=(y!=null)?(DB.months[mkey(y,m)]?.rentOverride?.[r.no]):null; return (ov!=null&&ov!=='')?+ov:r.rent; }
+const activeRooms = ()=>DB.rooms.filter(r=>r.active);
+
+/* ---- 電費：找上期讀數（往前找最近一筆已輸入的本期讀數，否則用 seedReading）---- */
+function prevReading(no, y, m){
+  for(let i=1;i<=24;i++){
+    let mm=m-i, yy=y; while(mm<=0){mm+=12;yy--;}
+    const v=DB.months[mkey(yy,mm)]?.readings?.[no];
+    if(v!=null&&v!=='') return +v;
+  }
+  const r=DB.rooms.find(x=>x.no===no); return r?+r.seedReading:0;
+}
+function elecOf(r,y,m){
+  const cur=DB.months[mkey(y,m)]?.readings?.[r.no];
+  if(cur==null||cur==='') return null;          // 尚未輸入本期 → 無電費
+  const prev=prevReading(r.no,y,m);
+  const use=Math.max(0,+cur-prev);
+  return {prev,cur:+cur,use,amount:use*DB.settings.elecRate};
+}
+
+/* ---- 服務費鏈：服務費(本月)=(上月實際匯款−扣除額)×比例 ---- */
+function isCable(m){ return DB.settings.cableMonths.includes(+m); }
+function depositSum(y,m){ const d=DB.months[mkey(y,m)]?.deposits||{}; return Object.values(d).reduce((a,b)=>a+(+b||0),0); }
+function ownerIncome(y,m){ return activeRooms().reduce((a,r)=>a+rentOf(r,y,m)+r.parking*DB.settings.parkingFee,0); }
+function prevRemit(y,m){
+  // 上一個月
+  let pm=m-1, py=y; if(pm<=0){pm=12;py--;}
+  const before = (py<DB.settings.startRoc)||(py===DB.settings.startRoc&&pm<DB.settings.startMonth);
+  if(before) return DB.settings.seedRemit;       // 起算月之前 → 用手動起始值
+  return remit(py,pm);
+}
+const _memo={};
+function serviceFee(y,m){ return Math.round(Math.max(0, prevRemit(y,m)-DB.settings.svcDeduct)*DB.settings.svcRate); }
+function remit(y,m){
+  const k=mkey(y,m); if(_memo[k]!=null) return _memo[k];
+  _memo[k]=0; // 防遞迴
+  const v = ownerIncome(y,m) - serviceFee(y,m) - (isCable(m)?DB.settings.cableFee:0) - depositSum(y,m);
+  _memo[k]=v; return v;
+}
+function clearMemo(){ for(const k in _memo) delete _memo[k]; }
+
+/* =========================================================================
+   租客 LINE 文字（民國年，照使用者格式）
+   ========================================================================= */
+function tenantBill(r,y,m){
+  const rent=rentOf(r,y,m), park=r.parking*DB.settings.parkingFee, water=r.water;
+  const e=elecOf(r,y,m);
+  const elec=e?e.amount:0;
+  const total=rent+park+water+elec;
+  let t=`${roc(y)}年${m}月份租金共計${fmt(total)}元\n`;
+  t+=`租金${fmt(rent)}元\n`;
+  if(park>0) t+=`車位${fmt(park)}元\n`;
+  if(water>0) t+=`水費${fmt(water)}元\n`;
+  if(e){
+    t+=`電費${fmt(elec)}元\n\n`;
+    t+=`電費\n`;
+    t+=`${e.cur}-${e.prev}=${e.use}度\n`;
+    t+=`${e.use}度*${DB.settings.elecRate}元=${fmt(elec)}`;
+  }
+  return t.trimEnd();
+}
+
+/* =========================================================================
+   分頁
+   ========================================================================= */
+const TABS=[['bill','租客帳單'],['elec','收電費'],['owner','屋主對帳'],['util','水電盈虧'],['set','設定']];
+let cur='bill', Y=115, M=6;
+
+function init(){
+  Y=DB.settings.startRoc; M=6;            // 預設停在 6 月方便看雙月示範
+  const today=new Date(); Y=today.getFullYear()-1911; M=today.getMonth()+1;
+  $('#yIn').value=Y;
+  const ms=$('#mIn'); ms.innerHTML=''; for(let i=1;i<=12;i++){const o=document.createElement('option');o.value=i;o.textContent=i;ms.appendChild(o);} ms.value=M;
+  $('#tabs').innerHTML=TABS.map(([k,n])=>`<button class="tab" data-k="${k}">${n}</button>`).join('');
+  $('#tabs').addEventListener('click',e=>{const b=e.target.closest('.tab');if(b){cur=b.dataset.k;render();}});
+  $('#yIn').addEventListener('input',()=>{Y=+$('#yIn').value;render();});
+  ms.addEventListener('change',()=>{M=+ms.value;render();});
+  render();
+}
+function render(){
+  clearMemo();
+  $('#rocLbl').textContent=`西元 ${Y+1911} 年`;
+  const even=M%2===0;
+  $('#parityLbl').textContent=even?'雙月 · 收電費':'單月';
+  $('#parityLbl').className='parity '+(even?'even':'odd');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.k===cur));
+  const v=$('#view');
+  if(cur==='bill')  v.innerHTML=viewBill();
+  if(cur==='elec')  v.innerHTML=viewElec();
+  if(cur==='owner') v.innerHTML=viewOwner();
+  if(cur==='util')  v.innerHTML=viewUtil();
+  if(cur==='set')   v.innerHTML=viewSet();
+  bind();
+}
+
+/* ---- 租客帳單 ---- */
+function viewBill(){
+  const cards=activeRooms().map(r=>{
+    const txt=tenantBill(r,Y,M);
+    const who=r.name?`${r.name}`:'（未填租客）';
+    return `<div class="billcard">
+      <div class="bh">${r.no}<span class="who">${who}</span></div>
+      <pre id="bill-${r.no}">${txt}</pre>
+      <div class="bf"><button class="btn sm teal" data-copy="bill-${r.no}">複製</button></div>
+    </div>`;
+  }).join('');
+  return `<div class="panel"><h2><span class="bar"></span>租客帳單 · ${roc(Y)}年${M}月</h2>
+    <div class="sub">每月都發。${M%2===0?'雙月：已自動帶入電費（需先到「收電費」輸入本期度數）。':'單月：房租＋車位＋水費。'}　每張可單獨複製貼到 LINE。</div>
+    <div class="bills">${cards}</div></div>`;
+}
+
+/* ---- 收電費 ---- */
+function viewElec(){
+  const mo=getMonth(Y,M);
+  const rows=activeRooms().map(r=>{
+    const prev=prevReading(r.no,Y,M);
+    const cur=mo.readings[r.no]??'';
+    const e=elecOf(r,Y,M);
+    return `<tr>
+      <td>${r.no}</td>
+      <td class="num">${prev}</td>
+      <td><input type="number" data-reading="${r.no}" value="${cur}" placeholder="本期"></td>
+      <td class="num">${e?e.use+' 度':'—'}</td>
+      <td class="num">${e?fmt(e.amount)+' 元':'—'}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="panel"><h2><span class="bar"></span>收電費 · ${roc(Y)}年${M}月</h2>
+    <div class="sub">輸入各房本期電表度數（取整數、捨去最後紅色 0.1 位）。用量＝本期−上期，電費＝用量×${DB.settings.elecRate} 元。</div>
+    <table><thead><tr><th>房號</th><th>上期</th><th>本期度數</th><th>用量</th><th>電費</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="tip">日後正式版：可一次批次上傳電表照片，由 Claude 視覺自動讀「房號＋讀數」填進這張表，你只要核對。</div></div>`;
+}
+
+/* ---- 屋主對帳 ---- */
+function viewOwner(){
+  const mo=getMonth(Y,M);
+  const rows=activeRooms().map(r=>{
+    const rent=rentOf(r,Y,M), park=r.parking*DB.settings.parkingFee;
+    return `<tr><td>${r.no}</td><td class="num">${fmt(rent)}</td><td class="num">${park?fmt(park):'—'}</td><td class="num">${fmt(rent+park)}</td></tr>`;
+  }).join('');
+  const income=ownerIncome(Y,M);
+  const svc=serviceFee(Y,M);
+  const cable=isCable(M)?DB.settings.cableFee:0;
+  const dep=depositSum(Y,M);
+  const out=income-svc-cable-dep;
+  const pr=prevRemit(Y,M);
+  // 退押金輸入
+  const depInputs=activeRooms().map(r=>`<div class="fld"><label>${r.no} 退押金</label><input type="number" data-dep="${r.no}" value="${mo.deposits[r.no]??''}" placeholder="0"></div>`).join('');
+  return `<div class="panel"><h2><span class="bar"></span>屋主對帳 · ${roc(Y)}年${M}月</h2>
+    <div class="sub">上月實際匯款 ${fmt(pr)} 元 → 服務費＝(${fmt(pr)}−${fmt(DB.settings.svcDeduct)})×${DB.settings.svcRate*100}%＝<b>${fmt(svc)}</b> 元</div>
+    <table><thead><tr><th>房號</th><th>房租</th><th>車位</th><th>小計</th></tr></thead>
+    <tbody>${rows}<tr class="sum"><td>合計</td><td colspan="2"></td><td class="num">${fmt(income)}</td></tr></tbody></table>
+    <div class="statement" style="margin-top:14px">
+      <div class="row"><span>房租收入合計（含車位）</span><span class="num">${fmt(income)}</span></div>
+      <div class="row"><span>代管服務費</span><span class="num neg">− ${fmt(svc)}</span></div>
+      ${cable?`<div class="row"><span>第四台（${M}月）</span><span class="num neg">− ${fmt(cable)}</span></div>`:''}
+      ${dep?`<div class="row"><span>退押金</span><span class="num neg">− ${fmt(dep)}</span></div>`:''}
+      <div class="row big"><span>本月實匯屋主</span><span class="num">${fmt(out)}</span></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn teal sm" data-copy-owner>複製屋主對帳文字</button></div>
+    <textarea id="ownerTxt" class="hide"></textarea>
+    <h2 style="margin-top:20px;font-size:15px"><span class="bar"></span>退押金（退租時填，從當月匯款扣）</h2>
+    <div class="grid2" style="margin-top:8px">${depInputs}</div>
+  </div>`;
+}
+function ownerText(){
+  const income=ownerIncome(Y,M), svc=serviceFee(Y,M), cable=isCable(M)?DB.settings.cableFee:0, dep=depositSum(Y,M);
+  const out=income-svc-cable-dep;
+  let t=`【林口套房代管 · 屋主對帳】民國${roc(Y)}年${M}月\n──────────────\n`;
+  activeRooms().forEach(r=>{const rent=rentOf(r,Y,M),p=r.parking*DB.settings.parkingFee;t+=`${r.no}　房租${fmt(rent)}${p?` 車位${fmt(p)}`:''}　小計${fmt(rent+p)}\n`;});
+  t+=`──────────────\n房租收入合計　${fmt(income)}\n代管服務費　− ${fmt(svc)}\n`;
+  if(cable)t+=`第四台　− ${fmt(cable)}\n`;
+  if(dep)t+=`退押金　− ${fmt(dep)}\n`;
+  t+=`──────────────\n本月實匯屋主　${fmt(out)}`;
+  return t;
+}
+
+/* ---- 水電盈虧 ---- */
+function viewUtil(){
+  const mo=getMonth(Y,M);
+  // 雙月對帳：抓本月＋上一個月的收費
+  const elecGot=activeRooms().reduce((a,r)=>{const e=elecOf(r,Y,M);return a+(e?e.amount:0);},0);
+  const waterGot=activeRooms().reduce((a,r)=>a+r.water,0)*2; // 兩個月份水費
+  const bill=mo.bill||{};
+  const billElec=+bill.elec||0, billWater=+bill.water||0;
+  const net=(elecGot+waterGot)-(billElec+billWater);
+  return `<div class="panel"><h2><span class="bar"></span>水電盈虧（內部）· ${roc(Y)}年${M}月</h2>
+    <div class="sub">我向租客收到的電費＋水費，對比台電／台水實付帳單，看有沒有剩。（水費以每月固定×2 個月估算）</div>
+    <div class="statement">
+      <div class="row"><span>收到電費（本期）</span><span class="num pos">+ ${fmt(elecGot)}</span></div>
+      <div class="row"><span>收到水費（2 個月）</span><span class="num pos">+ ${fmt(waterGot)}</span></div>
+      <div class="rule"></div>
+      <div class="row"><span>台電帳單實付</span><span class="num"><input type="number" data-bill="elec" value="${bill.elec??''}" placeholder="0" style="width:110px"></span></div>
+      <div class="row"><span>台水帳單實付</span><span class="num"><input type="number" data-bill="water" value="${bill.water??''}" placeholder="0" style="width:110px"></span></div>
+      <div class="row big"><span>本期盈餘／不足</span><span class="num ${net>=0?'pos':'neg'}">${net>=0?'+ ':'− '}${fmt(Math.abs(net))}</span></div>
+    </div></div>`;
+}
+
+/* ---- 設定 ---- */
+function viewSet(){
+  const s=DB.settings;
+  const rows=DB.rooms.map((r,i)=>`<tr>
+    <td>${r.no}</td>
+    <td><input type="number" data-r="${i}" data-f="rent" value="${r.rent}"></td>
+    <td><input type="number" data-r="${i}" data-f="parking" value="${r.parking}" style="width:54px"></td>
+    <td><input type="number" data-r="${i}" data-f="water" value="${r.water}" style="width:64px"></td>
+    <td><input type="number" data-r="${i}" data-f="deposit" value="${r.deposit}"></td>
+    <td><input type="number" data-r="${i}" data-f="seedReading" value="${r.seedReading}"></td>
+  </tr>`).join('');
+  const tenants=DB.rooms.map((r,i)=>`<div class="panel" style="padding:12px;margin-bottom:10px">
+    <b>${r.no}</b>
+    <div class="grid2" style="margin-top:8px">
+      <div class="fld"><label>租客姓名</label><input data-r="${i}" data-f="name" value="${r.name}"></div>
+      <div class="fld"><label>聯絡方式（電話／LINE）</label><input data-r="${i}" data-f="contact" value="${r.contact}"></div>
+      <div class="fld"><label>租期起</label><input data-r="${i}" data-f="start" value="${r.start}" placeholder="115/01/01"></div>
+      <div class="fld"><label>租期迄</label><input data-r="${i}" data-f="end" value="${r.end}" placeholder="116/12/31"></div>
+    </div></div>`).join('');
+  return `<div class="panel"><h2><span class="bar"></span>房間 · 金額設定</h2>
+    <div class="sub">房租＝純房租；車位＝車位「數量」（每個 ${s.parkingFee} 元）；水費＝每月固定；上期讀數＝目前電表最新值。</div>
+    <table><thead><tr><th>房號</th><th>房租</th><th>車位數</th><th>水費/月</th><th>押金</th><th>上期讀數</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+
+    <div class="panel"><h2><span class="bar"></span>常數 · 起算</h2>
+    <div class="grid2">
+      <div class="fld"><label>服務費扣除額</label><input type="number" data-s="svcDeduct" value="${s.svcDeduct}"></div>
+      <div class="fld"><label>服務費比例（%）</label><input type="number" data-s="svcRatePct" value="${s.svcRate*100}"></div>
+      <div class="fld"><label>第四台費</label><input type="number" data-s="cableFee" value="${s.cableFee}"></div>
+      <div class="fld"><label>每度電價</label><input type="number" data-s="elecRate" value="${s.elecRate}"></div>
+      <div class="fld"><label>車位費/個</label><input type="number" data-s="parkingFee" value="${s.parkingFee}"></div>
+      <div class="fld"><label>起算（民國年）</label><input type="number" data-s="startRoc" value="${s.startRoc}"></div>
+      <div class="fld"><label>起算月</label><input type="number" data-s="startMonth" value="${s.startMonth}"></div>
+      <div class="fld"><label>起算月的「上月實際匯款」起始值</label><input type="number" data-s="seedRemit" value="${s.seedRemit}"></div>
+    </div>
+    <div class="tip">第四台月份固定為 3／6／9／12。服務費＝(上月實際匯款−扣除額)×比例；第四台、退押金都會讓隔月服務費基數變小（照字面）。</div></div>
+
+    <div class="panel"><h2><span class="bar"></span>租客資料</h2>${tenants}</div>
+
+    <div class="panel" style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn ghost sm" id="expBtn">匯出備份(JSON)</button>
+      <button class="btn ghost sm" id="impBtn">匯入備份</button>
+      <input type="file" id="impFile" class="hide" accept="application/json">
+      <button class="btn ghost sm" id="resetBtn" style="color:var(--red);margin-left:auto">回復預設資料</button>
+    </div>`;
+}
+
+/* =========================================================================
+   事件綁定
+   ========================================================================= */
+function bind(){
+  // 複製
+  document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{copyText($('#'+b.dataset.copy).textContent);});
+  const co=$('[data-copy-owner]'); if(co) co.onclick=()=>copyText(ownerText());
+  // 電表本期度數
+  document.querySelectorAll('[data-reading]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).readings[inp.dataset.reading]=inp.value;save();render();});
+  // 退押金
+  document.querySelectorAll('[data-dep]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).deposits[inp.dataset.dep]=inp.value;save();render();});
+  // 台電台水帳單
+  document.querySelectorAll('[data-bill]').forEach(inp=>inp.onchange=()=>{getMonth(Y,M).bill[inp.dataset.bill]=inp.value;save();render();});
+  // 房間 / 租客欄位
+  document.querySelectorAll('[data-r]').forEach(inp=>inp.onchange=()=>{
+    const r=DB.rooms[+inp.dataset.r], f=inp.dataset.f;
+    r[f]=(['name','contact','start','end'].includes(f))?inp.value:(+inp.value||0); save();
+    if(f==='name') render();
+  });
+  // 常數
+  document.querySelectorAll('[data-s]').forEach(inp=>inp.onchange=()=>{
+    const f=inp.dataset.s;
+    if(f==='svcRatePct') DB.settings.svcRate=(+inp.value||0)/100;
+    else DB.settings[f]=+inp.value||0;
+    save(); toast('已儲存');
+  });
+  // 匯出 / 匯入 / 重置
+  const eb=$('#expBtn'); if(eb) eb.onclick=exportJSON;
+  const ib=$('#impBtn'); if(ib) ib.onclick=()=>$('#impFile').click();
+  const f=$('#impFile'); if(f) f.onchange=importJSON;
+  const rb=$('#resetBtn'); if(rb) rb.onclick=()=>{if(confirm('確定回復預設資料？目前資料會清除。')){DB=structuredClone(DEFAULT);save();render();}};
+}
+function copyText(t){ navigator.clipboard.writeText(t).then(()=>toast('已複製')); }
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='代管記帳備份_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+}
+function importJSON(e){
+  const file=e.target.files[0]; if(!file)return;
+  const rd=new FileReader(); rd.onload=()=>{try{DB=JSON.parse(rd.result);save();render();toast('已匯入');}catch(x){toast('檔案格式錯誤');}}; rd.readAsText(file);
+}
+let toastT;
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1600);}
+
+init();
+</script>
+</body>
+</html>
