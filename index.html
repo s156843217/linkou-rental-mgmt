@@ -214,7 +214,7 @@ function tenantBill(r,y,m){
   const e=elecOf(r,y,m);
   const elec=e?e.amount:0;
   const total=rent+park+water+elec;
-  let t=`${roc(y)}年${m}月份租金共計${fmt(total)}元\n`;
+  let t=`${y}年${m}月份租金共計${fmt(total)}元\n`;
   t+=`租金${fmt(rent)}元\n`;
   if(park>0) t+=`車位${fmt(park)}元\n`;
   if(water>0) t+=`水費${fmt(water)}元\n`;
@@ -272,7 +272,7 @@ function viewBill(){
       <div class="bf"><button class="btn sm teal" data-copy="bill-${r.no}">複製</button></div>
     </div>`;
   }).join('');
-  return `<div class="panel"><h2><span class="bar"></span>租客帳單 · ${roc(Y)}年${M}月</h2>
+  return `<div class="panel"><h2><span class="bar"></span>租客帳單 · ${Y}年${M}月</h2>
     <div class="sub">每月都發。${M%2===0?'雙月：已自動帶入電費（需先到「收電費」輸入本期度數）。':'單月：房租＋車位＋水費。'}　每張可單獨複製貼到 LINE。</div>
     <div class="bills">${cards}</div></div>`;
 }
@@ -292,7 +292,7 @@ function viewElec(){
       <td class="num">${e?fmt(e.amount)+' 元':'—'}</td>
     </tr>`;
   }).join('');
-  return `<div class="panel"><h2><span class="bar"></span>收電費 · ${roc(Y)}年${M}月</h2>
+  return `<div class="panel"><h2><span class="bar"></span>收電費 · ${Y}年${M}月</h2>
     <div class="sub">輸入各房本期電表度數（取整數、捨去最後紅色 0.1 位）。用量＝本期−上期，電費＝用量×${DB.settings.elecRate} 元。</div>
     <table><thead><tr><th>房號</th><th>上期</th><th>本期度數</th><th>用量</th><th>電費</th></tr></thead>
     <tbody>${rows}</tbody></table>
@@ -314,7 +314,7 @@ function viewOwner(){
   const pr=prevRemit(Y,M);
   // 退押金輸入
   const depInputs=activeRooms().map(r=>`<div class="fld"><label>${r.no} 退押金</label><input type="number" data-dep="${r.no}" value="${mo.deposits[r.no]??''}" placeholder="0"></div>`).join('');
-  return `<div class="panel"><h2><span class="bar"></span>屋主對帳 · ${roc(Y)}年${M}月</h2>
+  return `<div class="panel"><h2><span class="bar"></span>屋主對帳 · ${Y}年${M}月</h2>
     <div class="sub">上月實際匯款 ${fmt(pr)} 元 → 服務費＝(${fmt(pr)}−${fmt(DB.settings.svcDeduct)})×${DB.settings.svcRate*100}%＝<b>${fmt(svc)}</b> 元</div>
     <table><thead><tr><th>房號</th><th>房租</th><th>車位</th><th>小計</th></tr></thead>
     <tbody>${rows}<tr class="sum"><td>合計</td><td colspan="2"></td><td class="num">${fmt(income)}</td></tr></tbody></table>
@@ -334,7 +334,7 @@ function viewOwner(){
 function ownerText(){
   const income=ownerIncome(Y,M), svc=serviceFee(Y,M), cable=isCable(M)?DB.settings.cableFee:0, dep=depositSum(Y,M);
   const out=income-svc-cable-dep;
-  let t=`【林口套房代管 · 屋主對帳】民國${roc(Y)}年${M}月\n──────────────\n`;
+  let t=`【林口套房代管 · 屋主對帳】民國${Y}年${M}月\n──────────────\n`;
   activeRooms().forEach(r=>{const rent=rentOf(r,Y,M),p=r.parking*DB.settings.parkingFee;t+=`${r.no}　房租${fmt(rent)}${p?` 車位${fmt(p)}`:''}　小計${fmt(rent+p)}\n`;});
   t+=`──────────────\n房租收入合計　${fmt(income)}\n代管服務費　− ${fmt(svc)}\n`;
   if(cable)t+=`第四台　− ${fmt(cable)}\n`;
@@ -352,7 +352,7 @@ function viewUtil(){
   const bill=mo.bill||{};
   const billElec=+bill.elec||0, billWater=+bill.water||0;
   const net=(elecGot+waterGot)-(billElec+billWater);
-  return `<div class="panel"><h2><span class="bar"></span>水電盈虧（內部）· ${roc(Y)}年${M}月</h2>
+  return `<div class="panel"><h2><span class="bar"></span>水電盈虧（內部）· ${Y}年${M}月</h2>
     <div class="sub">我向租客收到的電費＋水費，對比台電／台水實付帳單，看有沒有剩。（水費以每月固定×2 個月估算）</div>
     <div class="statement">
       <div class="row"><span>收到電費（本期）</span><span class="num pos">+ ${fmt(elecGot)}</span></div>
@@ -381,7 +381,7 @@ function viewHist(){
     const elecGot=activeRooms().reduce((a,r)=>{const e=elecOf(r,y,m);return a+(e?e.amount:0);},0);
     const here=(y===Y&&m===M);
     return `<tr style="${here?'background:#FBF3E0':''}">
-      <td><b>${roc(y)}年${m}月</b>${m%2===0?' <span style="color:var(--teal-d);font-size:11px">雙</span>':''}${monthHasData(y,m)?'':' <span style="color:#bbb;font-size:11px">未填</span>'}</td>
+      <td><b>${y}年${m}月</b>${m%2===0?' <span style="color:var(--teal-d);font-size:11px">雙</span>':''}${monthHasData(y,m)?'':' <span style="color:#bbb;font-size:11px">未填</span>'}</td>
       <td class="num">${fmt(income)}</td>
       <td class="num neg">−${fmt(svc)}</td>
       <td class="num">${cable?'−'+fmt(cable):'—'}</td>
