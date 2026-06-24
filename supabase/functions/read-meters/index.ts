@@ -1,11 +1,9 @@
 // Supabase Edge Function: read-meters
 // 收電表照片(base64),用 Google Gemini(免費額度)視覺辨識「房號 + 讀數」,回傳 JSON。
-// GEMINI_API_KEY 存在 Supabase Secrets,絕不外洩到前端。
-// 預設只有登入者能呼叫(Supabase 預設驗證 JWT)。
-// 免費金鑰:Google AI Studio (aistudio.google.com) → Get API key,免信用卡。
+// GEMINI_API_KEY 存在 Supabase Secrets,絕不外洩到前端。免信用卡(AI Studio 拿金鑰)。
 
 const KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const MODEL = "gemini-2.5-flash"; // 免費額度、支援視覺;不夠快可改 gemini-2.0-flash
+const MODEL = "gemini-2.0-flash"; // 免費額度、視覺、較穩定;可改 gemini-2.5-flash
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -25,6 +23,8 @@ const PROMPT = `你是台灣電子式電表讀數辨識助手。
 const json = (o: unknown, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { ...CORS, "content-type": "application/json" } });
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
@@ -37,25 +37,28 @@ Deno.serve(async (req) => {
     }));
     parts.push({ text: PROMPT });
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0 },
-        }),
-      },
-    );
-    const data = await r.json();
-    if (!r.ok) return json({ error: data?.error?.message ?? "Gemini 失敗", detail: data }, 502);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
+    const reqBody = JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0 },
+    });
 
-    // deno-lint-ignore no-explicit-any
-    const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
-      .map((p: any) => p.text ?? "").join("").trim();
-    const out = text.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    return new Response(out || "{}", { headers: { ...CORS, "content-type": "application/json" } });
+    // 過載(503)或限流(429)時自動重試
+    let data: any = null, lastStatus = 0;
+    for (let i = 0; i < 4; i++) {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: reqBody });
+      lastStatus = r.status;
+      data = await r.json();
+      if (r.ok) {
+        const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
+          .map((p: any) => p.text ?? "").join("").trim();
+        const out = text.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+        return new Response(out || "{}", { headers: { ...CORS, "content-type": "application/json" } });
+      }
+      if (r.status !== 503 && r.status !== 429) break; // 非過載/限流就不重試
+      await sleep(1500 * (i + 1));
+    }
+    return json({ error: data?.error?.message ?? `Gemini 失敗(${lastStatus})`, status: lastStatus }, 502);
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
